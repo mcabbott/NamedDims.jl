@@ -61,14 +61,54 @@ Base.reshape(nda::NamedDimsArray, dims::Tuple{Vararg{Int}}) =
     reshape(parent(nda), dims)
 Base.reshape(nda::NamedDimsArray{<:Any,<:Any,1}, dims::Tuple{Vararg{Int}}) =
     reshape(parent(nda), dims)
+
 # special case reshape(vector, 1,1,:,1) gets names (_,_,name,_)
 function Base.reshape(nda::NamedDimsArray{L,T,1}, dims::Tuple{Vararg{Union{Colon, Int}}}) where {L,T}
-    if sum(map(d -> d===1 ? 0 : d===Colon() ? 1 : 99, dims)) == 1
-        new_names = map(d -> d==1 ? :_ : L[1], dims)
+    new_names = vector_reshape_names(first(L), dims...) # |> compile_time_return_hack
+    if length(new_names) == length(dims)
         return NamedDimsArray{new_names}(reshape(parent(nda), dims))
     else
-        return reshape(parent(nda), dims...)
+        return reshape(parent(nda), dims)
     end
 end
 
-# @generated vector_reshape_names(Val{L}, Val{dims})
+function vector_reshape_names(name, d, dims...)
+    if d===1
+        return (:_, vector_reshape_names(name, dims...)...)
+    elseif d===Colon() && name !== :already_used
+        return (name, vector_reshape_names(nothing, dims...)...)
+    else
+        return ()
+    end
+end
+vector_reshape_names(name) = ()
+
+# function vector_reshape_names(names::Tuple, dims::Tuple)
+#     count(isequal(Colon()), dims) == 1 || return (:nope,)
+#     count(isequal(1), dims) == length(dims)-1 || return (:nope,)
+#     return map(d -> d==1 ? :_ : names[1], dims)
+# end
+
+@generated function vector_reshape_names(::Val{names}, ::Val{dims}) where {names,dims}
+    new_names = []
+    for d in dims
+        if d === 1
+            push!(new_names, QuoteNode(:_))
+        elseif d === Colon()
+            push!(new_names, QuoteNode(names[1]))
+        else
+            return nothing
+        end
+    end
+    return :( ($(new_names...),) )
+end
+
+#=
+
+# 69.270 ns (3 allocations: 208 bytes)
+@btime (() -> reshape([1,2,3,4], 1,:))()
+
+# 597.961 ns (11 allocations: 528 bytes)
+@btime (() -> reshape(NamedDimsArray{(:a,)}([1,2,3,4]), 1,:))()
+
+=#
