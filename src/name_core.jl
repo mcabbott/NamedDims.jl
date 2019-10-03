@@ -240,6 +240,25 @@ function unify_names_shortest(names_a, names_b)
     return compile_time_return_hack(ret)
 end
 
+"""
+    unify_names_permuted(a, b)
+
+Given two tuples of symbols, this constructs a third tuple of which they are both subsets.
+It doesn't yet have the right logic for wildcards, which should combine
+`(_, _, c) + (a, b) -> (a,b,c)` surely... and `(_, _, c) + (a, b, d) -> (a,b,c,d)` or error?
+"""
+unify_names_permuted(a, b) = _unify_names_permuted(a, b...)
+# @btime (()->unify_names_permuted((:a, :b, :c), (:b, :a, :d)))()
+# 10.219 ns (1 allocation: 48 bytes)
+
+_unify_names_permuted(done::Tuple, x::Symbol, rest::Symbol...) =
+    if Base.sym_in(x, done)
+        return _unify_names_permuted(done, rest...)
+    else
+        return _unify_names_permuted((done..., x), rest...)
+    end
+_unify_names_permuted(done::Tuple) = done |> compile_time_return_hack
+
 # The following are helpers for remaining_dimnames_from_indexing
 # as a generated function it can get unhappy if asked to use anon functions
 # and it can only call function declared before it. So we declare them explictly here.
