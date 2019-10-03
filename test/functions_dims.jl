@@ -107,3 +107,25 @@ end
         @test_broken nda * pinv(nda) ≈ 1.0
     end
 end
+
+@testset "reshape" begin
+    v = NamedDimsArray(rand(4), :v)
+    m = NamedDimsArray(rand(4,4), (:x, :y))
+
+    # Mostly names get dropped:
+    @test reshape(m, (2,4,2)) isa Array
+    @test reshape(m, 2,4,2) isa Array
+    @test reshape(m, :) isa Array
+    @test reshape(m, (2,4,:)) isa Array
+    @test reshape(m, 2,4,:) isa Array
+
+    @test reshape(v, (2,2)) isa Array
+    @test reshape(v, 2,2) isa Array
+    @test reshape(v, (2,:)) isa Array
+    @test reshape(v, 2,:) isa Array
+
+    # Except for a vector being re-oriented:
+    @test reshape(v, :) isa NamedDimsArray{(:v,)}
+    @test reshape(v, 1,:) isa NamedDimsArray{(:_, :v)}
+    @test reshape(v, (1,:,1)) isa NamedDimsArray{(:_, :v, :_)}
+end

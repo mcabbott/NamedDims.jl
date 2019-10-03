@@ -55,5 +55,20 @@ end
 
 
 # reshape
-# For now we only implement the version that drops dimension names
-Base.reshape(nda::NamedDimsArray, dims::Int...) = reshape(parent(nda), dims...)
+Base.reshape(nda::NamedDimsArray, dims::Tuple{Vararg{Union{Colon, Int}}}) =
+    reshape(parent(nda), dims)
+Base.reshape(nda::NamedDimsArray, dims::Tuple{Vararg{Int}}) =
+    reshape(parent(nda), dims)
+Base.reshape(nda::NamedDimsArray{<:Any,<:Any,1}, dims::Tuple{Vararg{Int}}) =
+    reshape(parent(nda), dims)
+# special case reshape(vector, 1,1,:,1) gets names (_,_,name,_)
+function Base.reshape(nda::NamedDimsArray{L,T,1}, dims::Tuple{Vararg{Union{Colon, Int}}}) where {L,T}
+    if sum(map(d -> d===1 ? 0 : d===Colon() ? 1 : 99, dims)) == 1
+        new_names = map(d -> d==1 ? :_ : L[1], dims)
+        return NamedDimsArray{new_names}(reshape(parent(nda), dims))
+    else
+        return reshape(parent(nda), dims...)
+    end
+end
+
+# @generated vector_reshape_names(Val{L}, Val{dims})
