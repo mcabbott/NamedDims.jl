@@ -247,7 +247,13 @@ Given two tuples of symbols, this constructs a third tuple of which they are bot
 It doesn't yet have the right logic for wildcards, which should combine
 `(_, _, c) + (a, b) -> (a,b,c)` surely... and `(_, _, c) + (a, b, d) -> (a,b,c,d)` or error?
 """
-unify_names_permuted(a, b) = _unify_names_permuted(a, b...)
+function unify_names_permuted(a, b)
+    out = _unify_names_permuted(a, b...)
+    out = Tuple(sort(collect(out); by = String, rev=false))
+    @info "u_n_p" a b out
+    out
+end
+# unify_names_permuted(a, b) = _unify_names_permuted(a, b...)
 # @btime (()->unify_names_permuted((:a, :b, :c), (:b, :a, :d)))()
 # 10.219 ns (1 allocation: 48 bytes)
 

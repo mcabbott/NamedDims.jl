@@ -48,6 +48,7 @@ Base.BroadcastStyle(::NamedDimsStyle{A,L}, b::DefaultArrayStyle) where {A,L} = N
 
 Base.BroadcastStyle(a::AbstractArrayStyle{M}, ::NamedDimsStyle{B,L}) where {B,M,L} = NamedDimsStyle(a, B(), L)
 
+using TransmuteDims
 
 """
     unwrap_broadcasted
@@ -66,10 +67,31 @@ function unwrap_broadcasted(x, L)
     x
 end
 function unwrap_broadcasted(nda::NamedDimsArray, L)
-    @info "unwrap_broadcasted 3 -> permute" names(nda) L
-    parent(permutedims(nda, L))
+    perm = map(s -> dim_noerror(names(nda), s), L)
+    @info "unwrap_broadcasted 3 -> permute" names(nda) eltype(nda) L perm
+    # invperm(dims(nda, L))
+
+    parent(transmutedims(nda, perm))
 end
 
+#=
+using NamedDims
+
+ab = NamedDimsArray((1:3) .+ zeros(Int,3)', (:a, :b))
+abi = NamedDimsArray(im .* (1:3) .+ zeros(Int,3)', (:a, :b))
+
+2 .* ab
+
+ab .+ ab
+
+ab .+ ab'
+
+
+ai = NamedDimsArray(im .* (1:3), (:a,))
+
+ai .+ ab
+
+=#
 
 # We need to implement copy because if the wrapper array type does not support setindex
 # then the `similar` based default method will not work
