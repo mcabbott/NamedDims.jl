@@ -29,7 +29,6 @@ and then look at the `@code_lowered` again.
 compile_time_return_hack(x::Tuple{Vararg{Symbol}}) = _compile_time_return_hack(Val{x}())
 _compile_time_return_hack(::Val{X}) where X = X
 
-
 """
     dim(dimnames, name)
 
@@ -71,8 +70,6 @@ Base.@pure function dim_noerror(dimnames::Tuple{Vararg{Symbol, N}}, name::Symbol
     return 0
 end
 
-
-
 """
     permute_dimnames(dimnames, perm)
 
@@ -94,7 +91,99 @@ function permute_dimnames(dimnames::NTuple{N, Symbol}, perm) where N
 end
 
 """
+    wild_permutation(src, dst)
+
+Finds a permutation such that `res = permute_dimnames(src, perm)` agrees with `dst`,
+in the sense of `unify_names(res, dst)`. Both may contain wildcards.
+Could use some more error handling!
+"""
+function wild_permutation(src, target)
+    length(src) == length(target) || throw(ArgumentError("Can't find a permutation from $(src) to $(target)"))
+
+    # some = _wild_first_pass(target, src...)
+    some = _wild_first_pass3(target, src)
+    # @show some
+
+    # rev = ntuple(d -> d in some ? nothing : d, length(target))
+    rev = ntuple(length(target)) do d
+        # now check whether d appears in some
+        tup = ntuple(length(some)) do e
+            getfield(some, e) === d && return 1
+            0
+        end
+        sum(tup) === 1 && return nothing
+        return d
+    end
+    # @show rev
+
+    nums = filter(!isnothing, rev)
+    # @show nums
+
+    perm = _wild_second_pass(nums, some...)
+    # @show perm
+    return perm
+end
+
+# first pass: where the letter from src appears in dst, put the number, else nothing
+@inline function _wild_first_pass(target, s, rest...)
+    if s === :_
+        res = nothing
+        # res = 0
+    else
+        res = findfirst(isequal(s), target)
+        # res = dim_noerror(target, s)
+    end
+    # res = ifelse(s == :_ , nothing, findfirst(isequal(s), target))
+    return (res, _wild_first_pass(target, rest...)...)
+end
+_wild_first_pass(target) = ()
+
+
+function _wild_first_pass3(target, src)
+    ntuple(length(src)) do d
+        s = getfield(src, d)
+        s === :_ && return nothing
+        tup = ntuple(n -> getfield(target, n) === s ? n : 0, length(target))
+        tot = sum(tup)
+        tot === 0 && return nothing
+        return tot
+    end
+end
+
+# second pass: replace nothings with un-used numbers
+@inline function _wild_second_pass(nums, n, rest...)
+    if n === nothing
+        return (first(nums), _wild_second_pass(Base.tail(nums), rest...)...)
+    else
+        return (n, _wild_second_pass(nums, rest...)...)
+    end
+end
+_wild_second_pass(nums,) = ()
+
+
+# https://github.com/JuliaLang/julia/pull/32968
+filter(args...) = Base.filter(args...)
+filter(f, xs::Tuple) = Base.afoldl((ys, x) -> f(x) ? (ys..., x) : ys, (), xs...)
+filter(f, t::Base.Any16) = Tuple(filter(f, collect(t)))
+
+#=
+
+@btime wild_permutation((:i, :k, :_), (:_, :_, :k))
+@btime (()->wild_permutation((:i, :k, :_), (:_, :_, :k)))() # 1.421 ns (0 allocations: 0 bytes)
+
+@btime _wild_first_pass((:i, :k, :_), :_, :_, :k)
+@btime (() -> _wild_first_pass((:i, :k, :_), (:_, :_, :k)...))() #  164.832 ns (1 allocation: 16 bytes)
+@btime (() -> _wild_first_pass2((:i, :k, :_), (:_, :_, :k) ))()  #  166.559 ns (1 allocation: 16 bytes)
+@btime (() -> _wild_first_pass3((:i, :k, :_), (:_, :_, :k) ))()  #  0.030 ns (0 allocations: 0 bytes)
+
+@btime _wild_second_pass((1,2), 3, nothing, 4, nothing)          # 1.421 ns (0 allocations: 0 bytes)
+@btime (() -> _wild_second_pass((1,2), 3, nothing, 4, nothing))()
+
+=#
+
+"""
     tuple_issubset
+
 A version of `is_subset` sepecifically for `Tuple`s of `Symbol`s, that is `@pure`.
 This helps it get optimised out of existance. It is less of an abuse of `@pure` than
 most of the stuff for making `NamedTuples` work.
@@ -132,9 +221,9 @@ function order_named_inds(dimnames::Tuple{Vararg{Symbol,N}}; named_inds...) wher
     return full_inds
 end
 
-
 """
     incompatible_dimension_error(names_a, names_b)
+
 Throws a `DimensionMismatch` explaining that these dimension names are not compatible.
 """
 function incompatible_dimension_error(names_a, names_b)
@@ -223,6 +312,7 @@ is_noninteger_type(::Any) = true
 
 """
     remaining_dimnames_from_indexing(dimnames::Tuple, inds...)
+
 Given a tuple of dimension names
 and a set of index expressesion e.g `1, :, 1:3, [true, false]`,
 determine which are not dropped.
@@ -237,9 +327,9 @@ Dimensions indexed with scalars are dropped
     return Expr(:call, :compile_time_return_hack, Expr(:tuple, keep_names...))
 end
 
-
 """
     remaining_dimnames_after_dropping(dimnames::Tuple, dropped_dims)
+
 Given a tuple of dimension names, and either a collection of dimensions,
 or a single dimension, expressed as a number,
 Returns the dimension names with those dimensions dropped.
