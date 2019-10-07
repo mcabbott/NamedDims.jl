@@ -101,28 +101,18 @@ attempts to add guardrails add time & allocations.
 """
 function wild_permutation(src::NTuple{N,Symbol}, target::NTuple{N,Symbol}) where {N}
     some = _wild_first_pass(target, src)
-    # @show some
-
-    # rev = ntuple(d -> d in some ? nothing : d, length(target))
-    rev = ntuple(N) do d
-        tup = ntuple(e -> getfield(some, e) === d ? 1 : 0, N)
-        sum(tup) === 1 ? nothing : d
-    end
-    # @show rev
-
-    nums = filter(!isnothing, rev)
-    # @show nums
-
+    @show some
+    nums = _wild_free_numbers(some, src)
+    @show nums
     perm = _wild_second_pass(nums, some...)
-    # @show perm
-
-    # unify_names(permute_dimnames(src, perm), target) # 13.574 μs (12 allocations: 288 bytes)
+    @show perm
+    # unify_names(permute_dimnames(src, perm), target) # --> 13.574 μs (12 allocations: 288 bytes)
 
     # isperm(perm) || throw(ArgumentError("Can't find a permutation from $(src) to $(target)"))
-    # isperm(perm) # 44.097 ns (2 allocations: 128 bytes)
+    # isperm(perm) # --> 44.097 ns (2 allocations: 128 bytes)
+
     return perm
 end
-
 function wild_permutation(src::Tuple{Vararg{Symbol}}, target::Tuple{Vararg{Symbol}})
     length(target) > length(src) || throw(ArgumentError(
         "Can't find a permutation from $(src) (extended) to $(target)"))
@@ -136,10 +126,22 @@ function _wild_first_pass(target, src)
         s = getfield(src, d)
         s === :_ && return nothing
         tup = ntuple(n -> getfield(target, n) === s ? n : 0, length(target))
+        # count(!iszero, tup) > 1 && error("Can't find permutation, due to repeated symbol in target $target") # --> 190.242 ns (2 allocations: 48 bytes)
         tot = sum(tup)
         tot === 0 && return nothing
         return tot
     end
+end
+
+# now find what numbers 1:N haven't been used yet
+function _wild_free_numbers(some, src)
+    # rev = ntuple(d -> d in some ? nothing : d, length(target))
+    rev = ntuple(length(some)) do d
+        tup = ntuple(e -> getfield(some, e) === d ? 1 : 0, length(some))
+        count(!iszero, tup) > 1 && error("Can't find permutation, due to repeated symbol in source $src") # --> 5.871 ns (0 allocations: 0 bytes)
+        sum(tup) === 1 ? nothing : d
+    end
+    nums = filter(!isnothing, rev)
 end
 
 # second pass: replace nothings with un-used numbers
@@ -158,15 +160,20 @@ filter(f, xs::Tuple) = Base.afoldl((ys, x) -> f(x) ? (ys..., x) : ys, (), xs...)
 filter(f, t::Base.Any16) = Tuple(filter(f, collect(t)))
 
 #=
-using NamedDims: wild_permutation, _wild_first_pass, _wild_first_pass3, _wild_second_pass
+import NamedDims: wild_permutation, _wild_first_pass, _wild_free_numbers, _wild_second_pass
 
 @btime wild_permutation((:i, :k, :_), (:_, :_, :k))
 @btime (()->wild_permutation((:i, :k, :_), (:_, :_, :k)))() # 1.421 ns (0 allocations: 0 bytes)
 
 @btime (() -> _wild_first_pass((:i, :k, :_), (:_, :_, :k) ))()  #  0.030 ns (0 allocations: 0 bytes)
 
+@btime (() -> _wild_free_numbers((2, nothing, 3, nothing)))()   #  18.690 ns (0 allocations: 0 bytes)
+
 @btime _wild_second_pass((1,2), 3, nothing, 4, nothing)          # 1.421 ns (0 allocations: 0 bytes)
 @btime (() -> _wild_second_pass((1,2), 3, nothing, 4, nothing))()
+
+# This case is broken:
+wild_permutation((:i, :_, :k), (:j, :_, :k))
 
 =#
 
