@@ -95,24 +95,18 @@ end
 
 Finds a permutation such that `res = permute_dimnames(src, perm)` agrees with `dst`,
 in the sense of `unify_names(res, dst)`. Both may contain wildcards.
-Could use some more error handling!
-"""
-function wild_permutation(src, target)
-    length(src) == length(target) || throw(ArgumentError("Can't find a permutation from $(src) to $(target)"))
 
-    # some = _wild_first_pass(target, src...)
-    some = _wild_first_pass3(target, src)
+If there is no solution, or symbols are repeated, it will may return nonsense...
+attempts to add guardrails add time & allocations.
+"""
+function wild_permutation(src::NTuple{N,Symbol}, target::NTuple{N,Symbol}) where {N}
+    some = _wild_first_pass(target, src)
     # @show some
 
     # rev = ntuple(d -> d in some ? nothing : d, length(target))
-    rev = ntuple(length(target)) do d
-        # now check whether d appears in some
-        tup = ntuple(length(some)) do e
-            getfield(some, e) === d && return 1
-            0
-        end
-        sum(tup) === 1 && return nothing
-        return d
+    rev = ntuple(N) do d
+        tup = ntuple(e -> getfield(some, e) === d ? 1 : 0, N)
+        sum(tup) === 1 ? nothing : d
     end
     # @show rev
 
@@ -121,25 +115,23 @@ function wild_permutation(src, target)
 
     perm = _wild_second_pass(nums, some...)
     # @show perm
+
+    # unify_names(permute_dimnames(src, perm), target) # 13.574 μs (12 allocations: 288 bytes)
+
+    # isperm(perm) || throw(ArgumentError("Can't find a permutation from $(src) to $(target)"))
+    # isperm(perm) # 44.097 ns (2 allocations: 128 bytes)
     return perm
 end
 
-# first pass: where the letter from src appears in dst, put the number, else nothing
-@inline function _wild_first_pass(target, s, rest...)
-    if s === :_
-        res = nothing
-        # res = 0
-    else
-        res = findfirst(isequal(s), target)
-        # res = dim_noerror(target, s)
-    end
-    # res = ifelse(s == :_ , nothing, findfirst(isequal(s), target))
-    return (res, _wild_first_pass(target, rest...)...)
+function wild_permutation(src::Tuple{Vararg{Symbol}}, target::Tuple{Vararg{Symbol}})
+    length(target) > length(src) || throw(ArgumentError(
+        "Can't find a permutation from $(src) (extended) to $(target)"))
+    extra = ntuple(_ -> :_, length(target)-length(src))
+    wild_permutation((src..., extra...), target)
 end
-_wild_first_pass(target) = ()
 
-
-function _wild_first_pass3(target, src)
+# first pass: where the letter from src appears in dst, put the number, else nothing
+function _wild_first_pass(target, src)
     ntuple(length(src)) do d
         s = getfield(src, d)
         s === :_ && return nothing
@@ -160,21 +152,18 @@ end
 end
 _wild_second_pass(nums,) = ()
 
-
 # https://github.com/JuliaLang/julia/pull/32968
 filter(args...) = Base.filter(args...)
 filter(f, xs::Tuple) = Base.afoldl((ys, x) -> f(x) ? (ys..., x) : ys, (), xs...)
 filter(f, t::Base.Any16) = Tuple(filter(f, collect(t)))
 
 #=
+using NamedDims: wild_permutation, _wild_first_pass, _wild_first_pass3, _wild_second_pass
 
 @btime wild_permutation((:i, :k, :_), (:_, :_, :k))
 @btime (()->wild_permutation((:i, :k, :_), (:_, :_, :k)))() # 1.421 ns (0 allocations: 0 bytes)
 
-@btime _wild_first_pass((:i, :k, :_), :_, :_, :k)
-@btime (() -> _wild_first_pass((:i, :k, :_), (:_, :_, :k)...))() #  164.832 ns (1 allocation: 16 bytes)
-@btime (() -> _wild_first_pass2((:i, :k, :_), (:_, :_, :k) ))()  #  166.559 ns (1 allocation: 16 bytes)
-@btime (() -> _wild_first_pass3((:i, :k, :_), (:_, :_, :k) ))()  #  0.030 ns (0 allocations: 0 bytes)
+@btime (() -> _wild_first_pass((:i, :k, :_), (:_, :_, :k) ))()  #  0.030 ns (0 allocations: 0 bytes)
 
 @btime _wild_second_pass((1,2), 3, nothing, 4, nothing)          # 1.421 ns (0 allocations: 0 bytes)
 @btime (() -> _wild_second_pass((1,2), 3, nothing, 4, nothing))()

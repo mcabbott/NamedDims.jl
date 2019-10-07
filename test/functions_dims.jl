@@ -30,7 +30,6 @@ end
         @test f(ndv) == [10 20 30]
         @test names(f(ndv)) == (:_, :foo)
 
-
         if f === permutedims
             # unlike adjoint and tranpose, permutedims should not be its own inverse
             # The new dimension should stick around
@@ -56,10 +55,12 @@ end
 end
 
 @testset "permutedims" begin
-    nda = NamedDimsArray{(:w, :x, :y, :z)}(ones(10, 20, 30, 40))
+    nda = NamedDimsArray{(:w, :x, :y, :z)}(ones(10, 20, 30, 40));
+
+    # Identity permutation:
     @test (
-        names(permutedims(nda, (:w, :x, :y, :z))) ==
-        names(permutedims(nda, 1:4)) ==
+        NamedDims.names(permutedims(nda, (:w, :x, :y, :z))) ==
+        NamedDims.names(permutedims(nda, 1:4)) ==
         (:w, :x, :y, :z)
     )
     @test (
@@ -68,9 +69,10 @@ end
         (10, 20, 30, 40)
     )
 
+    # Nontrivial permutation:
     @test (
-        names(permutedims(nda, (:w, :y, :x, :z))) ==
-        names(permutedims(nda, (1, 3, 2, 4))) ==
+        NamedDims.names(permutedims(nda, (:w, :y, :x, :z))) ==
+        NamedDims.names(permutedims(nda, (1, 3, 2, 4))) ==
         (:w, :y, :x, :z)
     )
     @test (
@@ -79,7 +81,19 @@ end
         (10, 30, 20, 40)
     )
 
-    # @test_throws Exception permutedims(nda, (:foo,:x,:y,:z)) # broken
+    # With wildcards:
+    @test (
+        NamedDims.names(permutedims(nda, (:w, :_, :x, :_))) ==
+        NamedDims.names(permutedims(nda, (1, 3, 2, 4))) ==
+        (:w, :y, :x, :z)
+    )
+    @test (
+        size(permutedims(nda, (:w, :_, :x, :_))) ==
+        size(permutedims(nda, (1, 3, 2, 4))) ==
+        (10, 30, 20, 40)
+    )
+
+    @test_throws Exception permutedims(nda, (:foo,:x,:y,:z))
     @test_throws Exception permutedims(nda, (:x,:y,:z))
     @test_throws Exception permutedims(nda, (:x,:x,:y,:z))
 

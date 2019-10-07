@@ -5,6 +5,7 @@ using NamedDims:
     unify_names_longest,
     order_named_inds,
     permute_dimnames,
+    wild_permutation,
     remaining_dimnames_from_indexing,
     remaining_dimnames_after_dropping
 using Test
@@ -84,4 +85,35 @@ end
 
     @test_throws BoundsError permute_dimnames((:a, :b, :c), (30, 30, 30))
     @test_throws BoundsError permute_dimnames((:a, :b), (1, 0))
+end
+
+@testset "wild_permute" begin
+    @test wild_permutation((:a, :b, :c, :d), (:a, :b, :c, :d)) == (1,2,3,4)
+    @test wild_permutation((:a, :b, :c, :d), (:d, :c, :a, :b)) == (3,4,2,1)
+
+    # wildcards in destination
+    @test wild_permutation((:a, :b, :c, :d), (:_, :_, :_, :_)) == (1,2,3,4)
+    @test wild_permutation((:a, :b, :c, :d), (:_, :_, :_, :a)) == (4,1,2,3)
+    @test wild_permutation((:a, :b, :c, :d), (:_, :_, :a, :b)) == (3,4,1,2)
+    @test wild_permutation((:a, :b, :c, :d), (:b, :_, :a, :_)) == (3,1,2,4)
+
+    # wildcards in source
+    @test wild_permutation((:_, :_, :_, :_), (:a, :b, :c, :d)) == (1,2,3,4)
+    @test wild_permutation((:_, :_, :_, :a), (:a, :b, :c, :d)) == (2,3,4,1)
+    @test wild_permutation((:_, :b, :_, :a), (:a, :b, :c, :d)) == (3,2,4,1)
+
+    # wildcards in both
+    @test wild_permutation((:_, :_, :_, :_), (:_, :_, :_, :_)) == (1,2,3,4)
+    @test wild_permutation((:a, :_, :c, :_), (:_, :b, :_, :d)) == (1,2,3,4)
+    @test wild_permutation((:a, :_, :c, :_), (:_, :c, :_, :d)) == (1,3,2,4)
+    @test wild_permutation((:a, :_, :c, :d), (:_, :c, :_, :a)) == (4,1,2,3)
+
+    # destination longer than source
+    @test wild_permutation((:a, :b, :c, :d), (:a, :b, :c, :d, :e)) == (1,2,3,4,5)
+    @test wild_permutation((:_, :b, :c, :_), (:b, :_, :_, :_, :c)) == (2,1,5,3,4)
+
+    # impossible to solve
+    @test_broken wild_permutation((:a, :a, :c, :d), (:a, :x, :y, :z))
+    @test_broken wild_permutation((:a, :a, :c, :d), (:a, :b, :c, :d))
+    @test_broken wild_permutation((:a, :_, :c, :d), (:a, :x, :y, :_))
 end

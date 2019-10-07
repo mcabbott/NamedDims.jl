@@ -18,18 +18,15 @@ function Base.dropdims(nda::NamedDimsArray; dims)
 end
 
 function Base.permutedims(nda::NamedDimsArray{L}, perm) where {L}
-    # numerical_perm = dim(nda, perm)
-    # @show L perm
-    if perm isa Tuple{Vararg{Symbol}}
-        numerical_perm = wild_permutation(perm, L)
-    else
-        numerical_perm = perm
-    end
-    # @show numerical_perm
-    isperm(numerical_perm) || error("not a permutation!")
-    new_names = permute_dimnames(L, numerical_perm)
-
-    return NamedDimsArray{new_names}(permutedims(parent(nda), numerical_perm))
+    data = permutedims(parent(nda), perm)
+    new_names = permute_dimnames(L, perm)
+    return NamedDimsArray{new_names}(data)
+end
+function Base.permutedims(nda::NamedDimsArray{L}, target::Tuple{Vararg{Symbol}}) where {L}
+    numerical_perm = wild_permutation(L, target)
+    new_names = unify_names(permute_dimnames(L, numerical_perm), target)
+    data = permutedims(parent(nda), numerical_perm)
+    return NamedDimsArray{new_names}(data)
 end
 
 for f in (
