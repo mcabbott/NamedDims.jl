@@ -292,3 +292,25 @@ end
     keep_names = [:(getfield(dimnames, $ii)) for ii in 1:N if ii ∉ dropped_dims_vals]
     return Expr(:call, :compile_time_return_hack, Expr(:tuple, keep_names...))
 end
+
+"""
+    replace_names(names, :a => :b)
+    replace_names(names, :a => :b, :x => :y)
+
+Replaces every `:a` in `names` with `:b`.
+If given several rules, these are applied in sequence, left to right.
+"""
+function replace_names(dimnames::Tuple, pair::Pair)
+    out = map(dimnames) do s
+        s === first(pair) && return last(pair)
+        s
+    end
+    return compile_time_return_hack(out)
+end
+# @btime NamedDims.replace_names((:a, :b), :b => :c) # 1.420 ns (0 allocations: 0 bytes)
+
+function replace_names(dimnames::Tuple, pair::Pair, pairs::Pair...)
+    step_one = replace_names(dimnames, pair)
+    return replace_names(step_one, pairs...)
+end
+# @btime NamedDims.replace_names((:a, :b), :b => :c, :a => :z) # 1.420 ns (0 allocations: 0 bytes)
