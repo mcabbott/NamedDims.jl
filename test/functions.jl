@@ -11,13 +11,13 @@ using Statistics
         @test f(nda) == f(a)
         @test f(nda; dims=:x) == f(nda; dims=1) == f(a; dims=1)
 
-        @test names(f(nda; dims=:x)) == (:x, :y) == names(f(nda; dims=1))
+        @test dimnames(f(nda; dims=:x)) == (:x, :y) == dimnames(f(nda; dims=1))
     end
 
     @testset "$f" for f in (cumsum, cumprod, sort)
         @test f(nda; dims=:x) == f(nda; dims=1) == f(a; dims=1)
 
-        @test names(f(nda; dims=:x)) == (:x, :y) == names(f(nda; dims=1))
+        @test dimnames(f(nda; dims=:x)) == (:x, :y) == dimnames(f(nda; dims=1))
 
         @test f([1, 4, 3]) == f(NamedDimsArray([1, 4, 3], :vec))
         @test_throws UndefKeywordError f(nda)
@@ -54,8 +54,8 @@ using Statistics
             @test f!(nda1, nda) == f!(nda1, a) == f(a, dims=1)
             @test f!(nda2, nda) == f!(nda2, a) == f(a, dims=2)
 
-            @test NamedDims.names(f!(nda1, nda)) == (:x, :y) == NamedDims.names(f!(nda1, a))
-            @test NamedDims.names(f!(nda2, nda)) == (:x, :y) == NamedDims.names(f!(nda2, a))
+            @test dimnames(f!(nda1, nda)) == (:x, :y) == dimnames(f!(nda1, a))
+            @test dimnames(f!(nda2, nda)) == (:x, :y) == dimnames(f!(nda2, a))
 
             @test_throws DimensionMismatch f!(nda1, transpose(nda)) # names wrong way around
         end
@@ -92,8 +92,8 @@ using Statistics
             @test_throws UndefKeywordError eachslice(a)
 
             @test (
-                names(first(eachslice(nda; dims=:b))) ==
-                names(first(eachslice(nda; dims=2))) ==
+                dimnames(first(eachslice(nda; dims=:b))) ==
+                dimnames(first(eachslice(nda; dims=2))) ==
                 (:a, :c)
             )
         end
@@ -122,8 +122,8 @@ using Statistics
         @test_throws UndefKeywordError mapslices(join, a)
 
         @test (
-            names(mapslices(join, nda; dims=:y)) ==
-            names(mapslices(join, nda; dims=2)) ==
+            dimnames(mapslices(join, nda; dims=:y)) ==
+            dimnames(mapslices(join, nda; dims=2)) ==
             (:x, :y)
         )
     end
@@ -144,8 +144,8 @@ using Statistics
             [false true]'
         )
         @test (
-            names(mapreduce(isodd, |, nda; dims=:y)) ==
-            names(mapreduce(isodd, |, nda; dims=2)) ==
+            dimnames(mapreduce(isodd, |, nda; dims=:y)) ==
+            dimnames(mapreduce(isodd, |, nda; dims=2)) ==
             (:x, :y)
         )
     end
@@ -155,7 +155,7 @@ using Statistics
         nda = NamedDimsArray(a, (:x, :y))
 
         @test zero(nda) == [0 0; 0 0] == zero(a)
-        @test names(zero(nda)) == (:x, :y)
+        @test dimnames(zero(nda)) == (:x, :y)
     end
 
     @testset "count" begin
@@ -171,7 +171,7 @@ using Statistics
         ndv = NamedDimsArray([10, 20, 30], (:i,))
 
         @test length(push!(ndv, 40)) == 4
-        @test names(pushfirst!(ndv, 0)) == (:i,)
+        @test dimnames(pushfirst!(ndv, 0)) == (:i,)
         @test ndv == 0:10:40
 
         @test pop!(ndv) == 40
@@ -185,13 +185,96 @@ using Statistics
         ndv0 = NamedDimsArray([0, 0], (:zero,))
 
         @test length(append!(ndv, ndv45)) == 5
-        @test names(append!(ndv, [60,70])) == (:i,)
+        @test dimnames(append!(ndv, [60,70])) == (:i,)
 
         @test_throws DimensionMismatch append!(ndv, ndv0)
         @test ndv == 10:10:70 # error was thrown before altering
 
-        @test names(empty!(ndv)) == (:i,)
+        @test dimnames(empty!(ndv)) == (:i,)
         @test length(ndv) == 0
+    end
+
+    @testset "map, map!" begin
+        nda = NamedDimsArray([11 12; 21 22], (:x, :y))
+
+        @test dimnames(map(+, nda, nda, nda)) == (:x, :y)
+        @test dimnames(map(+, nda, parent(nda), nda)) == (:x, :y)
+        @test dimnames(map(+, parent(nda), nda)) == (:x, :y)
+
+        # this method only called based on first two arguments:
+        @test dimnames(map(+, parent(nda), parent(nda), nda)) == (:_, :_)
+
+        # one-arg forms work without adding anything... except on 1.0...
+        @test dimnames(map(sqrt, nda)) == (:x, :y)
+        @test foreach(sqrt, nda) === nothing
+
+        # map! may return a different wrapper of the same data, like sum!
+        semi = NamedDimsArray(rand(2,2), (:x, :_))
+        @test dimnames(map!(sqrt, rand(2,2), nda)) == (:x, :y)
+        @test dimnames(map!(sqrt, semi, nda)) == (:x, :y)
+
+        zed = similar(nda, Float64)
+        @test map!(sqrt, zed, nda) == sqrt.(nda)
+        @test zed[1,1] == sqrt(nda[1,1])
+
+        # mismatching names
+        @test_throws DimensionMismatch map(+, nda, transpose(nda))
+        @test_throws DimensionMismatch map(+, nda, parent(nda), nda, transpose(nda))
+        @test_throws DimensionMismatch map!(sqrt, semi, transpose(nda))
+
+        @test foreach(+, semi, nda) === nothing
+        @test_throws DimensionMismatch foreach(+, semi, transpose(nda))
+    end
+
+    @testset "filter" begin
+        nda = NamedDimsArray([11 12; 21 22], (:x, :y))
+        ndv = NamedDimsArray(1:7, (:z,))
+
+        @test dimnames(filter(isodd, ndv)) == (:z,)
+        @test dimnames(filter(isodd, nda)) == (:_,)
+    end
+
+    @testset "collect(generator)" begin
+        nda = NamedDimsArray([11 12; 21 22], (:x, :y))
+        ndv = NamedDimsArray([10, 20, 30], (:z,))
+
+        @test dimnames([sqrt(x) for x in nda]) == (:x, :y)
+
+        @test dimnames([x^i for (i,x) in enumerate(ndv)]) == (:z,)
+        @test dimnames([x^i for (i,x) in enumerate(nda)]) == (:x, :y)
+
+        # Iterators.product -- has all names
+        @test dimnames([x+y for x in nda, y in ndv]) == (:x, :y, :z)
+        @test dimnames([x+y for x in nda, y in 1:5]) == (:x, :y, :_)
+        @test dimnames([x+y for x in 1:5, y in ndv]) == (:_, :z)
+        four = [x*y/z^p for p in 1:2, x in ndv, y in 1:2, z in nda]
+        @test dimnames(four) == (:_, :z, :_, :x, :y)
+
+        # Iterators.flatten -- no obvious name to use
+        @test dimnames([x+y for x in nda for y in ndv]) == (:_,)
+
+        if VERSION >= v"1.1"
+            # can't see inside eachslice generators, until:
+            # https://github.com/JuliaLang/julia/pull/32310
+            @test dimnames([sum(c) for c in eachcol(nda)]) == (:_,)
+        end
+    end
+
+    @testset "equality" begin
+        nda = NamedDimsArray([10 20; 30 40], (:x, :y))
+        nda2 = NamedDimsArray([10 20; 30 40], (:x, :_))
+        nda3 = NamedDimsArray([10 20; 30 40], (:x, :z))
+        nda4 = NamedDimsArray([11 22; 33 44], (:x, :y))
+        ndv = NamedDimsArray([10, 20, 30], (:x,))
+
+        @testset "$eq" for eq in (Base.:(==), isequal, isapprox)
+            @test eq(nda, nda)
+            @test eq(nda, nda2)
+            @test eq(nda, nda3) == false
+            @test eq(nda, nda4) == false
+            @test eq(nda, ndv) == false
+        end
+        @test isapprox(nda, nda4; atol=2π)
     end
 
 end  # Base
@@ -203,6 +286,6 @@ end  # Base
         @test f(nda) == f(a)
         @test f(nda; dims=:x) == f(nda; dims=1) == f(a; dims=1)
 
-        @test names(f(nda; dims=:x)) == (:x, :y) == names(f(nda; dims=1))
+        @test dimnames(f(nda; dims=:x)) == (:x, :y) == dimnames(f(nda; dims=1))
     end
 end

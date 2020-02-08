@@ -8,10 +8,14 @@ using Tracker
 
     @testset "standard case" begin
         @test nda .+ nda == 2ones(3)
-        @test names(nda .+ nda) == (:a,)
+        @test dimnames(nda .+ nda) == (:a,)
 
         @test nda .+ nda .+ nda == 3ones(3)
-        @test names(nda .+ nda .+ nda) == (:a,)
+        @test dimnames(nda .+ nda .+ nda) == (:a,)
+
+        # in-place
+        @test dimnames(nda .= 0 .* nda .+ 7) == (:a,)
+        @test unname(nda .= 0 .* nda .+ 7) == 7*ones(3)
     end
 
     @testset "partially named dims" begin
@@ -20,7 +24,7 @@ using Tracker
 
         lhs = ndx .+ ndy
         rhs = ndy .+ ndx
-        @test names(lhs) == (:x, :y) == names(rhs)
+        @test dimnames(lhs) == (:x, :y) == dimnames(rhs)
         @test lhs == 2ones(3, 5) == rhs
     end
 
@@ -37,7 +41,7 @@ using Tracker
             ones(3, 3, 3, 3)
         )
         @test lhs_sum == ones(3, 3, 3, 3)
-        @test names(lhs_sum) == (:a, :b, :c, :d)
+        @test dimnames(lhs_sum) == (:a, :b, :c, :d)
 
 
         rhs_sum = .+(
@@ -45,7 +49,7 @@ using Tracker
             NamedDimsArray{(:w, :x, :y, :z)}(ones(3, 3, 3, 3))
         )
         @test rhs_sum == ones(3, 3, 3, 3)
-        @test names(rhs_sum) == (:w, :x, :y, :z)
+        @test dimnames(rhs_sum) == (:w, :x, :y, :z)
     end
 
     @testset "broadcasting" begin
@@ -57,9 +61,9 @@ using Tracker
         @test s .+ m == ones(3, 3) == m .+ s
         @test s .+ v .+ m == ones(3, 3) == m .+ s .+ v
 
-        @test names(v .+ m) == (:time, :value) == names(m .+ v)
-        @test names(s .+ m) == (:time, :value) == names(m .+ s)
-        @test names(s .+ v .+ m) == (:time, :value) == names(m .+ s .+ v)
+        @test dimnames(v .+ m) == (:time, :value) == dimnames(m .+ v)
+        @test dimnames(s .+ m) == (:time, :value) == dimnames(m .+ s)
+        @test dimnames(s .+ v .+ m) == (:time, :value) == dimnames(m .+ s .+ v)
     end
 
     @testset "Mixed array types" begin
@@ -78,7 +82,7 @@ using Tracker
 
             total = T1(ones(3, 6)) .+ T2(2ones(3, 6)) .+ T3(3ones(3, 6))
             @test total == 6ones(3, 6)
-            @test names(total) == (:foo, :bar)
+            @test dimnames(total) == (:foo, :bar)
         end
     end
 
@@ -86,7 +90,30 @@ using Tracker
         # https://github.com/invenia/NamedDims.jl/issues/8#issuecomment-490124369
         nda = NamedDimsArray{(:x,:y,:z)}(ones(10,20,30))
         @test nda .+ ones(1,20) == 2ones(10,20,30)
-        @test names(nda .+ ones(1,20)) == (:x, :y, :z)
+        @test dimnames(nda .+ ones(1,20)) == (:x, :y, :z)
+    end
+
+    @testset "in-place assignment .=" begin
+        ab = NamedDimsArray(rand(2,2), (:a, :b))
+        a_ = NamedDimsArray(rand(2,2), (:a, :_))
+        ba = NamedDimsArray(rand(2,2), (:b, :a))
+        ac = NamedDimsArray(rand(2,2), (:a, :c))
+        z = zeros(2,2)
+
+        # https://github.com/invenia/NamedDims.jl/issues/71
+        @test_throws DimensionMismatch z .= ab .+ ba
+        @test_throws DimensionMismatch z .= ab .+ ac
+        @test_throws DimensionMismatch a_ .= ab .+ ac
+        @test_throws DimensionMismatch ab .= a_ .+ ac
+        @test_throws DimensionMismatch ac .= ab .+ ba
+
+        # check that dest is written into:
+        @test dimnames(z .= ab .+ ba') == (:a, :b)
+        @test z == (ab.data .+ ba.data')
+        @test z isa Array  # has not itself magically gained names
+
+        @test dimnames(z .= ab .+ a_) == (:a, :b)
+        @test dimnames(a_ .= ba' .+ ab) == (:a, :b)
     end
 
 end

@@ -55,7 +55,13 @@ function Broadcast.copy(bc::Broadcasted{NamedDimsStyle{S}}) where S
     L = broadcasted_names(bc)
     return NamedDimsArray{L}(data)
 end
-# TODO: copyto! for broadcasting
+
+function Base.copyto!(dest::AbstractArray, bc::Broadcasted{NamedDimsStyle{S}}) where S
+    inner_bc = unwrap_broadcasted(bc)
+    copyto!(dest, inner_bc)
+    L = unify_names(dimnames(dest), broadcasted_names(bc))
+    return NamedDimsArray{L}(dest)
+end
 
 broadcasted_names(bc::Broadcasted) = broadcasted_names(bc.args...)
 function broadcasted_names(a, bs...)
@@ -63,5 +69,5 @@ function broadcasted_names(a, bs...)
     b_name = broadcasted_names(bs...)
     unify_names_longest(a_name, b_name)
 end
-broadcasted_names(a::AbstractArray) = names(a)
+broadcasted_names(a::AbstractArray) = dimnames(a)
 broadcasted_names(a) = tuple()

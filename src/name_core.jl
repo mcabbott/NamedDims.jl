@@ -111,27 +111,30 @@ Base.@pure function tuple_issubset(lhs::Tuple{Vararg{Symbol,N}}, rhs::Tuple{Vara
     return true
 end
 
+
 """
-    order_named_inds(dimnames::Tuple; named_inds...)
+    order_named_inds(Val(names); kw...)
+    order_named_inds(Val(names), namedtuple)
 
-Returns the values of the `named_inds`, sorted as per the order they appear in `dimnames`,
-with any missing dimnames, having there value set to `:`.
-An error is thrown if any dimnames are given in `named_inds` that do not occur in `dimnames`.
+Returns the tuple of index values for an array with `names`, when indexed by keywords.
+Any dimensions not fixed are given as `:`, to make a slice.
+An error is thrown if any keywords are used which do not occur in `nda`'s names.
 """
-order_named_inds(dimnames::Tuple; named_inds...) = order_named_inds(dimnames, named_inds.data)
+order_named_inds(val::Val{L}; kw...) where {L} = order_named_inds(val, kw.data)
 
-function order_named_inds(dimnames::Tuple{Vararg{Symbol,N}}, named_inds::NamedTuple) where {N}
-    if !tuple_issubset(keys(named_inds), dimnames)
-        throw(DimensionMismatch("Expected subset of $(dimnames), got $(keys(named_inds))"))
+@generated function order_named_inds(val::Val{L}, ni::NamedTuple{K}) where {L,K}
+    tuple_issubset(K, L) || throw(DimensionMismatch("Expected subset of $L, got $K"))
+    exs = map(L) do n
+        if Base.sym_in(n, K)
+            qn = QuoteNode(n)
+            :(getfield(ni, $qn))
+        else
+            :(Colon())
+        end
     end
-
-    full_inds = ntuple(N) do ii
-        name_ii = dimnames[ii]
-        get(named_inds, name_ii, :)
-    end
-
-    return full_inds
+    return Expr(:tuple, exs...)
 end
+
 
 
 """
@@ -144,9 +147,12 @@ end
 
 """
     unify_names(a, b)
+    unify_names(a, b, cs...)
 
 Produces the merged set of names for tuples of names `a` and `b`,
 or an error if it is not possibly to unify them.
+Then continues with further names `cs`, if any.
+
 Two tuples of names can be unified they are the same length
 and if for each position the names are either the same, or one is a wildcard (`:_`).
 When combining wildcard with non-wildcard the resulting name is the non-wildcard.
@@ -160,16 +166,31 @@ For example:
 
 This is the type of name combination used for binary array operations.
 Where the dimensions of both arrays must be the same.
+
+See also `names_are_unifiable(a, b)`, which returns `true` instead of the merged names,
+and `false` instead of an error.
 """
 function unify_names(names_a, names_b)
-    # 0-Allocations if inputs are the same
-    # 0-Allocation, if has a `:_` see  `@btime (()->unify_names((:a, :b), (:a, :_)))()`
+    # @btime (()->unify_names((:a, :b), (:a, :_)))()
+    ret = try_unify_names(names_a, names_b)
+    if ret === nothing
+        incompatible_dimension_error(names_a, names_b)
+    else
+        return compile_time_return_hack(ret)
+    end
+end
+unify_names(a) = a
+unify_names(a, b, cs...) = unify_names(unify_names(a,b), cs...)
+# @btime (()->unify_names((:a, :b), (:a, :_), (:_, :b)))()
 
-    names_a === names_b && return names_a
+names_are_unifiable(names_a, names_b) = try_unify_names(names_a, names_b) !== nothing
 
-    # Error message should not include names until it is thrown, as othrwise
-    # the interpolation allocates and slows everything down a lot.
-    length(names_a) != length(names_b) && incompatible_dimension_error(names_a, names_b)
+function try_unify_names(names_a, names_b)
+    if names_a === names_b
+        return names_a
+    elseif length(names_a) !== length(names_b)
+        return nothing
+    end
 
     ret = ntuple(length(names_a)) do ii  # remove :_ wildcards
         a = getfield(names_a, ii)
@@ -177,11 +198,14 @@ function unify_names(names_a, names_b)
         a === :_ && return b
         b === :_ && return a
         a === b && return a
-
-        return false  # mismatch occured, we mark this with a nonSymbol result
+        return false  # mismatch occured, we mark this with a non-Symbol result
     end
-    ret isa Tuple{Vararg{Symbol}} || incompatible_dimension_error(names_a, names_b)
-    return compile_time_return_hack(ret)
+
+    if ret isa Tuple{Vararg{Symbol}}
+        return compile_time_return_hack(ret)
+    else
+        return nothing
+    end
 end
 
 """
@@ -202,7 +226,7 @@ unify_names_longest(::Tuple{}, ::Tuple{}) = tuple()
 function unify_names_longest(names_a, names_b)
     # 0 Allocations: @btime (()-> unify_names_longest((:a,:b), (:a,)))()
 
-    length(names_a) == length(names_b) && return unify_names(names_a, names_b)
+    length(names_a) === length(names_b) && return unify_names(names_a, names_b)
     long, short = length(names_a) > length(names_b) ? (names_a, names_b) : (names_b, names_a)
     ret = ntuple(length(long)) do ii
         a = getfield(long, ii)
@@ -222,7 +246,7 @@ unify_names_shortest(::Tuple{}, ::Tuple{}) = ()
 function unify_names_shortest(names_a, names_b)
     # 0 Allocations: @btime (()-> unify_names_shortest((:a,:b), (:a,)))()
 
-    length(names_a) == length(names_b) && return unify_names(names_a, names_b)
+    length(names_a) === length(names_b) && return unify_names(names_a, names_b)
     long, short = length(names_a) > length(names_b) ? (names_a, names_b) : (names_b, names_a)
     ret = ntuple(length(short)) do ii
         a = getfield(long, ii)
@@ -314,3 +338,12 @@ function replace_names(dimnames::Tuple, pair::Pair, pairs::Pair...)
     return replace_names(step_one, pairs...)
 end
 # @btime NamedDims.replace_names((:a, :b), :b => :c, :a => :z) # 1.420 ns (0 allocations: 0 bytes)
+
+"""                
+    tuple_cat(x, y, zs...)
+
+This is like `vcat` for tuples, it splats everything into one long tuple.
+"""
+tuple_cat(x::Tuple, ys::Tuple...) = (x..., tuple_cat(ys...)...)
+tuple_cat() = ()
+# @btime tuple_cat((1, 2), (3, 4, 5), (6,)) # 0 allocations

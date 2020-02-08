@@ -44,10 +44,8 @@ function NamedDimsArray{L}(orig::AbstractArray{T, N}) where {L, T, N}
     return NamedDimsArray{L, T, N, typeof(orig)}(orig)
 end
 
-function NamedDimsArray(orig::AbstractArray{T, N}, names::NTuple{N, Symbol}) where {T, N}
-    return NamedDimsArray{names}(orig)
-end
-NamedDimsArray(orig::AbstractVector, name::Symbol) = NamedDimsArray(orig, (name,))
+@inline NamedDimsArray(orig::AbstractArray, names::Tuple) = NamedDimsArray{names}(orig)
+@inline NamedDimsArray(orig::AbstractVector, name::Symbol) = NamedDimsArray(orig, (name,))
 
 # Name-asserting constructor (like renaming, but only for wildcards (`:_`).)
 NamedDimsArray{L}(orig::NamedDimsArray{L}) where L = orig
@@ -73,13 +71,13 @@ unname(x::NamedDimsArray) = parent(x)
 unname(x::AbstractArray) = x
 
 """
-    names(A) -> Tuple
+    dimnames(A) -> Tuple
 
 Return the names of all the dimensions of the array `A`.
 """
-names(::Type{<:NamedDimsArray{L}}) where L = L
-names(::Type{<:AbstractArray{T, N}}) where {T, N} = ntuple(_->:_, N)
-names(x::T) where T<:AbstractArray = names(T)
+dimnames(::Type{<:NamedDimsArray{L}}) where L = L
+dimnames(::Type{<:AbstractArray{T, N}}) where {T, N} = ntuple(_->:_, N)
+dimnames(x::T) where T<:AbstractArray = dimnames(T)
 
 dim(a::NamedDimsArray{L}, name) where L = dim(L, name)
 
@@ -103,7 +101,7 @@ Base.axes(a::NamedDimsArray, d) = axes(parent(a), dim(a, d))
 
 
 function named_size(a::AbstractArray{T,N}) where {T,N}
-    L = names(a)
+    L = dimnames(a)
     NamedTuple{L, NTuple{N,Int}}(size(a))
 end
 function Base.similar(
@@ -135,12 +133,11 @@ function Base.similar(
     return similar(a, eltype, dims)
 end
 
-
 ###############################
 # kwargs indexing
 
 """
-    order_named_inds(A, named_inds...)
+    order_named_inds(A; named_inds...)
 
 Returns the indices that have the names and values given by `named_inds`
 sorted into the order expected for the dimension of the array `A`.
@@ -157,7 +154,9 @@ order_named_inds(A; y=5) == (:, 5)
 
 This provides the core indexed lookup for `getindex` and `setindex` on the Array `A`
 """
-order_named_inds(A::AbstractArray; named_inds...) = order_named_inds(names(A); named_inds...)
+function order_named_inds(A::NamedDimsArray{L}; named_inds...) where {L}
+    return order_named_inds(Val{L}(); named_inds...)
+end
 
 ###################
 # getindex / view / dotview
@@ -183,7 +182,7 @@ for f in (:getindex, :view, :dotview)
         @propagate_inbounds function Base.$f(a::NamedDimsArray, inds...)
             # Some nonscalar case, will return an array, so need to give that names.
             data = Base.$f(parent(a), inds...)
-            L = remaining_dimnames_from_indexing(names(a), inds)
+            L = remaining_dimnames_from_indexing(dimnames(a), inds)
             return NamedDimsArray{L}(data)
         end
     end

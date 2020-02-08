@@ -7,6 +7,8 @@ using NamedDims:
     dim_noerror,
     tuple_issubset,
     replace_names,
+    tuple_cat,
+    names_are_unifiable,
     order_named_inds,
     permute_dimnames,
     remaining_dimnames_from_indexing,
@@ -65,6 +67,11 @@ end
         @test_throws DimensionMismatch unify((:a,:b), (:b, :a))
         @test_throws DimensionMismatch unify((:a, :b, :c), (:_, :_, :d))
     end
+
+    # vararg version
+    @test unify_names((:a, :_), (:a, :b,), (:_, :b)) == (:a, :b)
+    @test unify_names((:a, :b,)) == (:a, :b)
+    @test_throws DimensionMismatch unify_names((:a, :_), (:a, :b,), (:_, :c))
 end
 @testset "allocations: unify_names_*" begin
     for unify in (unify_names, unify_names_longest, unify_names_shortest)
@@ -77,31 +84,31 @@ end
     if VERSION >= v"1.1"
         @test 0 == @allocated (()->unify_names_longest((:a, :b), (:a, :_, :c)))()
         @test 0 == @allocated (()->unify_names_shortest((:a, :b), (:a, :_, :c)))()
+        @test 0 == @allocated (()->names_are_unifiable((:a, :b), (:a, :_)))()
+        @test 0 == @allocated (()->names_are_unifiable((:a, :b), (:a, :c)))()
     else
         @test_broken 0 == @allocated (()->unify_names_longest((:a, :b), (:a, :_, :c)))()
         @test_broken 0 == @allocated (()->unify_names_shortest((:a, :b), (:a, :_, :c)))()
+        @test_broken 0 == @allocated (()->names_are_unifiable((:a, :b), (:a, :_)))()
+        @test_broken 0 == @allocated (()->names_are_unifiable((:a, :b), (:a, :c)))()
     end
+    @test 0 == @allocated (()->names_are_unifiable((:a, :b), (:a, :b)))()
 end
 
 
 @testset "order_named_inds" begin
-    @test order_named_inds((:x,)) == (:,)
-    @test order_named_inds((:x,); x=2) == (2,)
+    @test order_named_inds(Val((:x,))) == (:,)
+    @test order_named_inds(Val((:x,)); x=2) == (2,)
 
-    @test order_named_inds((:x, :y,)) == (:, :)
-    @test order_named_inds((:x, :y); x=2) == (2, :)
-    @test order_named_inds((:x, :y); y=2, ) == (:, 2)
-    @test order_named_inds((:x, :y); y=20, x=30) == (30, 20)
-    @test order_named_inds((:x, :y); x=30, y=20) == (30, 20)
+    @test order_named_inds(Val((:x, :y))) == (:, :)
+    @test order_named_inds(Val((:x, :y)); x=2) == (2, :)
+    @test order_named_inds(Val((:x, :y)); y=2, ) == (:, 2)
+    @test order_named_inds(Val((:x, :y)); y=20, x=30) == (30, 20)
+    @test order_named_inds(Val((:x, :y)); x=30, y=20) == (30, 20)
 end
 @testset "allocations: order_named_inds" begin
-    if v"1.1-" <= VERSION <= v"1.2-" # test passes on 1.1, including 1.1.1
-        @test 0 == @allocated (()->order_named_inds((:a, :b, :c); b=1, c=2))()
-        @test 0 == @allocated (()->order_named_inds((:a, :b, :c), (b=1, c=2)))()
-    else
-        @test_broken 0 == @allocated (()->order_named_inds((:a, :b, :c); b=1, c=2))()
-        @test_broken 0 == @allocated (()->order_named_inds((:a, :b, :c), (b=1, c=2)))()
-    end
+    @test 0 == @allocated (()->order_named_inds(Val((:a, :b, :c)); b=1, c=2))()
+    @test 0 == @allocated (()->order_named_inds(Val((:a, :b, :c)), (b=1, c=2)))()
 end
 
 
@@ -168,4 +175,13 @@ end
     @test 0 == @allocated replace_names((:a, :b), :b => :c)
     @test 0 == @allocated replace_names((:a, :b), :b => :c, :a => :z)
     @test 0 == @allocated replace_names((:a, :b, :c, :d), :a => :c, :c => :z)
+end
+
+
+@testset "tuple_cat" begin
+    @test tuple_cat((1, 2), (3, 4, 5), (6,)) == (1, 2, 3, 4, 5, 6)
+    @test tuple_cat((1, 2)) == (1, 2)
+end
+@testset "allocations: tuple_cat" begin
+    @test 0 == @allocated tuple_cat((1, 2), (3, 4, 5), (6,))
 end
