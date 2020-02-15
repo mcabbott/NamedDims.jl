@@ -171,30 +171,49 @@ for fun in (:fft, :ifft, :bfft)
 
 end
 
-for plan_type in (:Plan, :ScaledPlan)
-
-    @eval function Base.:*(plan::AbstractFFTs.$plan_type, A::NamedDimsArray{L,T,N}) where {L,T,N}
-        data = plan * parent(A)
-        if _hasproperty(plan, :region) # true for plan_fft from FFTW
-            dims = plan.region         # dims can be 1, (1,3) or 1:3
-        elseif _hasproperty(plan, :p)
-            dims = plan.p.region
-        else
-            return data
-        end
-        newL = ntuple(d -> d in dims ? wave_name(L[d]) : L[d], N)::NTuple{N,Symbol}
-        # plan.region is not part of the type, so using compile_time_return_hack is much slower:
-        # newL = wave_name(L, Tuple(dims)) # 37μs instead of 7.
-        return NamedDimsArray(data, newL)
-    end
-
+#=
+struct NamedPlan{L1,L2,D,T,PT} <: AbstractFFTs.Plan{T, PT}
+    plan::PT
 end
 
-if VERSION > v"1.1"
-    _hasproperty(x, s)::Bool = hasproperty(x, s)
-else
-    _hasproperty(x, s)::Bool = Base.sym_in(s, propertynames(x))
+
+function Base.:*(F::NamedPlan{L1,L2,D,T,PT}, A::NamedDimsArray{L,TA,N}) where {L1,L2,D,T,PT, L,TA,N}
+    F.plan * A
 end
+function Base.:*(F::NamedPlan{L1,L2,D}, A::AbstractArray{T,N}) where {L1,L2,D, T,N}
+    data = F.plan * A
+    i = 0
+    new_names = ntuple(d -> d in D ? L1[i+=1] : :_, N)
+    NamedDimsArray(data, new_names)
+end
+
+Base.inv(F::NamedPlan{L1,L2,D,T,PT}) where {L1,L2,T,PT} = NamedPlan{L2,L1,D,T,PT}(inv(F.plan))
+=#
+
+# for plan_type in (:Plan, :ScaledPlan)
+
+#     @eval function Base.:*(plan::AbstractFFTs.$plan_type, A::NamedDimsArray{L,T,N}) where {L,T,N}
+#         data = plan * parent(A)
+#         if _hasproperty(plan, :region) # true for plan_fft from FFTW
+#             dims = plan.region         # dims can be 1, (1,3) or 1:3
+#         elseif _hasproperty(plan, :p)
+#             dims = plan.p.region
+#         else
+#             return data
+#         end
+#         newL = ntuple(d -> d in dims ? wave_name(L[d]) : L[d], N)::NTuple{N,Symbol}
+#         # plan.region is not part of the type, so using compile_time_return_hack is much slower:
+#         # newL = wave_name(L, Tuple(dims)) # 37μs instead of 7.
+#         return NamedDimsArray(data, newL)
+#     end
+
+# end
+
+# if VERSION > v"1.1"
+#     _hasproperty(x, s)::Bool = hasproperty(x, s)
+# else
+#     _hasproperty(x, s)::Bool = Base.sym_in(s, propertynames(x))
+# end
 
 #=
 nda = NamedDimsArray(rand(4,4), (:k, :l))
